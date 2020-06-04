@@ -139,12 +139,13 @@ def write_cluster_config(name, images_train, images_valid, reference, members):
             'refimg': del_cam_planes(ref_view2)
         })
     output['training'] = training_set
-    with open('output/{}.json'.format(name),'w') as f:
+    os.makedirs('output/{}'.format(name), exist_ok=True)
+    with open('output/{}/multimpi.json'.format(name),'w') as f:
         output_json = json.dumps(output, cls=NumpyEncoder)
         f.write(output_json)
 
 def main():
-    for dataset in ['fern','flower','fortress','horns','leaves','orchids','room','trex']:
+    for dataset in ['fern','flower','fortress','horns','leaves','orchids','pond','room','trex']:
         images_train, images_valid = get_images_data(dataset)
         member, reference = find_cluster(images_train)
         centers = np.array(list(map(lambda x: x['center'],images_train)))[:,:,0]
