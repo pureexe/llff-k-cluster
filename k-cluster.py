@@ -2,10 +2,14 @@ import os
 import numpy as np
 from load_llff import load_llff_data
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D 
+from scipy.spatial import Delaunay
 import copy 
 import json
+from PIL import Image,ImageDraw
+import math
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -13,7 +17,8 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
-LLFF_DIR = "C:/Datasets/nerf_llff_data/"
+#LLFF_DIR = "C:/Datasets/nerf_llff_data/"
+LLFF_DIR = "/data/orbiter/datasets/nerf_llff_data/"
 DATASET = "fern"
 K_CLUSTER = 4
 
@@ -103,6 +108,138 @@ def find_cluster(images_train):
 
     return cluster_member, cluster_reference
 
+def create_Delaunay(images_train,reference):
+    centers = np.array(list(map(lambda x: x['center'],images_train)))[:,:,0]
+    pca = PCA(.95)
+    pca.fit(centers)
+    train_c = pca.transform(centers)
+    #print(reference)
+    ref = np.array([train_c[i] for i in reference])
+    #ref = [train_c[i] for i in reference]
+    indices = list(range(len(ref)))
+    tri = Delaunay(ref, incremental=True)
+
+    def orderConvexHull(points, ch):
+        mp = {}
+        for c in ch:
+            if c[0] not in mp:
+                mp[c[0]] = []
+            if c[1] not in mp:
+                mp[c[1]] = []
+
+            mp[c[0]].append(c[1])
+            mp[c[1]].append(c[0])
+        #print()
+
+        ls = [ch[0][0], ch[0][1]]
+        while ls[0] != ls[-1]:
+            two = mp[ls[-1]]
+            if two[0] == ls[-2]:
+                ls.append(two[1])
+            else:
+                ls.append(two[0])
+
+        # Find top point, opengl convention. I.e., max y
+        maxy = -1e10
+        maxyi = -1
+        for i, p in enumerate(ls):
+            if points[p][1] > maxy:
+                maxy = points[p][1]
+                maxyi = i
+
+        if points[ls[(maxyi+1) % len(ls)]][0] > points[ls[maxyi]][0]:
+            return ls
+        else:
+            return ls[::-1]
+
+    convexList = orderConvexHull(tri.points, tri.convex_hull)
+    convexList = convexList[:-1]
+    pp = tri.points
+    #print(tri.points)
+    plt.plot(train_c[:,0],train_c[:,1], 'o')
+    plt.triplot(pp[:,0], pp[:,1], tri.simplices.copy())
+    plt.plot(pp[:,0],pp[:,1], 'rx')
+    plt.savefig('output/xx.png')
+    newpoints = []
+    def func(v1):
+      #print("v1", v1)
+      v1 = np.array([v1[0], v1[1], 0])
+      v2 = np.array([0, 0, -1])
+      v3 = np.cross(v1, v2)
+      #print("v3", v3)
+      v3 = v3 / np.linalg.norm(v3)
+      return v3
+      
+    for i in range(len(convexList)):
+      p0 = convexList[i]
+      #if indices[p0] == 255: continue
+
+      pa = convexList[(i+1) % len(convexList)]
+      pb = convexList[(len(convexList)+i-1) % len(convexList)]
+      va = func(tri.points[pa] - tri.points[p0])
+      vb = -func(tri.points[pb] - tri.points[p0])
+      vs = (va + vb) * 0.5;
+      vs = vs / np.linalg.norm(vs)
+      newpoints.append(tri.points[p0] + vs[:2] * 0.8)
+      indices += [indices[p0]]
+
+    print(indices)
+    tri.add_points(newpoints)
+    
+    pp = tri.points
+    plt.triplot(pp[:,0], pp[:,1], tri.simplices.copy())
+    plt.plot(pp[:,0],pp[:,1], 'o')
+    plt.savefig('output/xxx.png')
+
+    size = 512
+    # Create empty black canvas
+    imBary = Image.new('RGB', (size, size))
+    drawBary = ImageDraw.Draw(imBary)
+
+    imInd = Image.new('RGB', (size, size))
+    drawInd = ImageDraw.Draw(imInd)
+
+    imIndVis = Image.new('RGB', (size, size))
+    drawIndVis = ImageDraw.Draw(imIndVis)
+
+    maxcoordinate = np.max(np.abs(tri.points))
+    scaler = size * 0.5 * 0.98 / maxcoordinate
+    shifter = size / 2
+
+    vlist = []
+    for i in range(size):
+        for j in range(size):
+            vx = i
+            vy = j
+            vx = (vx - shifter) / scaler
+            vy = (shifter - vy) / scaler
+            vlist.append((vx, vy))
+
+    ind = tri.find_simplex(vlist)
+
+    simscaler = int(math.floor(255 / (len(tri.simplices) - 1)))
+    for i in range(size):
+        for j in range(size):
+            val = ind[i * size + j]
+            if val > -1:
+                #print(tri.simplices[val])
+                ids = [indices[tri.simplices[val][x]] for x in range(3)]
+                #print(ids)
+                drawInd.point([(i, j)], fill=(ids[0], ids[1], ids[2]))
+                drawIndVis.point([(i, j)],
+                                fill=(ids[0] * simscaler,
+                                    ids[1] * simscaler,
+                                    ids[2] * simscaler))
+
+                bary = tri.transform[val, :2, :2] * np.matrix(vlist[i * size + j] - tri.transform[val, 2, :]).transpose()
+                drawBary.point([(i, j)], fill=(bary[0] * 255, bary[1] * 255, (1-bary[0]-bary[1]) * 255))
+
+    imBary.save('output/bary.png')
+    imInd.save('output/indices.png')
+    imIndVis.save('output/indicesVis.png')
+
+    exit()
+
 def del_cam_planes(image_object):
     del image_object['camera']
     del image_object['planes']
@@ -140,13 +277,15 @@ def write_cluster_config(name, images_train, images_valid, reference, members):
         })
     output['training'] = training_set
     with open('output/{}.json'.format(name),'w') as f:
-        output_json = json.dumps(output, cls=NumpyEncoder)
+        output_json = json.dumps(output, cls=NumpyEncoder, sort_keys=True,indent=2)
         f.write(output_json)
 
 def main():
-    for dataset in ['fern','flower','fortress','horns','leaves','orchids','room','trex']:
+    #for dataset in ['fern','flower','fortress','horns','leaves','orchids','room','trex']:
+    for dataset in ['fern']:
         images_train, images_valid = get_images_data(dataset)
         member, reference = find_cluster(images_train)
+        create_Delaunay(images_train,reference)
         centers = np.array(list(map(lambda x: x['center'],images_train)))[:,:,0]
         write_cluster_config(dataset, images_train, images_valid, reference, member)
     #visualization(centers, member, reference, DATASET)
