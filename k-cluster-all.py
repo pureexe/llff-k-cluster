@@ -13,7 +13,8 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
-LLFF_DIR = "C:/Datasets/nerf_llff_data/"
+#LLFF_DIR = "C:/Datasets/nerf_llff_data/"
+LLFF_DIR = "/data/orbiter/datasets/nerf_llff_data/"
 DATASET = "fern"
 K_CLUSTER = 1
 
