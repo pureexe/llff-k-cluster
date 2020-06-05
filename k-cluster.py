@@ -17,8 +17,8 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
-#LLFF_DIR = "C:/Datasets/nerf_llff_data/"
-LLFF_DIR = "/data/orbiter/datasets/nerf_llff_data/"
+LLFF_DIR = "C:/Datasets/nerf_llff_data/"
+#LLFF_DIR = "/data/orbiter/datasets/nerf_llff_data/"
 DATASET = "fern"
 K_CLUSTER = 4
 
@@ -276,13 +276,12 @@ def write_cluster_config(name, images_train, images_valid, reference, members):
             'refimg': del_cam_planes(ref_view2)
         })
     output['training'] = training_set
-    with open('output/{}.json'.format(name),'w') as f:
-        output_json = json.dumps(output, cls=NumpyEncoder, sort_keys=True,indent=2)
-        f.write(output_json)
-
+    os.makedirs('output/{}'.format(name), exist_ok=True)
+    with open('output/{}/multimpi.json'.format(name),'w') as f:
+      output_json = json.dumps(output, cls=NumpyEncoder, sort_keys=True,indent=2)
+      f.write(output_json)
 def main():
-    #for dataset in ['fern','flower','fortress','horns','leaves','orchids','room','trex']:
-    for dataset in ['fern']:
+    for dataset in ['fern','flower','fortress','horns','leaves','orchids','pond','room','trex']:
         images_train, images_valid = get_images_data(dataset)
         member, reference = find_cluster(images_train)
         create_Delaunay(images_train,reference)
